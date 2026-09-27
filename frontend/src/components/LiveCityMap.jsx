@@ -1,6 +1,16 @@
-import { Circle, MapContainer, Marker, Polyline, TileLayer, useMap } from 'react-leaflet'
+import { Circle, MapContainer, Marker, Polyline, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { useEffect, useMemo, useRef } from 'react'
 import { divIcon, bengaluruCenter, routeBounds, statusColor, toLatLng } from '../utils/map'
+
+function MapClickCapture({ clickMode, onMapClick }) {
+  useMapEvents({
+    click(event) {
+      if (!clickMode || !onMapClick) return
+      onMapClick({ lat: Number(event.latlng.lat.toFixed(5)), lng: Number(event.latlng.lng.toFixed(5)) })
+    },
+  })
+  return null
+}
 
 function FitRoute({ route }) {
   const map = useMap()
@@ -145,7 +155,7 @@ function SignalMarker({ signal }) {
     <>
       <Circle
         center={[signal.lat, signal.lng]}
-        radius={signal.state === 'GREEN' ? 200 : 90}
+        radius={signal.state === 'GREEN' ? (signal.activation_radius_m || 200) : 90}
         pathOptions={{ color, fillColor: color, fillOpacity: signal.state === 'GREEN' ? 0.13 : 0.05, opacity: 0.4, weight: 2 }}
       />
       <Marker
@@ -160,15 +170,17 @@ function SignalMarker({ signal }) {
   )
 }
 
-export default function LiveCityMap({ snapshot, startPoint, destinationPoint, trackedVehicleId, trackedAmbulanceId }) {
+export default function LiveCityMap({ snapshot, startPoint, destinationPoint, trackedVehicleId, trackedAmbulanceId, clickMode, onMapClick }) {
   const { route, ambulances, intersections, vehicles, heat_points: heatPoints } = snapshot
+  const clickHint = clickMode === 'pickup' ? 'Click map to set pickup' : clickMode === 'destination' ? 'Click map to set hospital' : 'Live Map Workspace'
   return (
-    <div className="relative h-full min-h-[520px] overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950 shadow-neon">
+    <div className={`relative h-full min-h-[520px] overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950 shadow-neon ${clickMode ? 'cursor-crosshair' : ''}`}>
       <MapContainer center={bengaluruCenter} zoom={13} zoomControl className="h-full w-full bg-slate-950">
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+        <MapClickCapture clickMode={clickMode} onMapClick={onMapClick} />
         <FitRoute route={route?.length ? route : [startPoint, destinationPoint]} />
         <TrackTarget
           ambulances={ambulances}
@@ -190,8 +202,10 @@ export default function LiveCityMap({ snapshot, startPoint, destinationPoint, tr
       </MapContainer>
       <div className="pointer-events-none absolute inset-0 map-panel-vignette" />
       <div className="pointer-events-none absolute inset-0 radar-scan" />
-      <div className="pointer-events-none absolute left-4 top-4 z-[600] rounded-full border border-cyan-300/30 bg-slate-950/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-cyan-100 backdrop-blur-xl">
-        Live Map Workspace
+      <div className={`pointer-events-none absolute left-4 top-4 z-[600] rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] backdrop-blur-xl ${
+        clickMode ? 'border-amber-300/40 bg-amber-400/15 text-amber-100' : 'border-cyan-300/30 bg-slate-950/80 text-cyan-100'
+      }`}>
+        {clickHint}
       </div>
     </div>
   )

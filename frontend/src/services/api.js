@@ -24,6 +24,25 @@ export function requestReroute() {
   return request('/reroute', { method: 'POST' })
 }
 
+export function pauseSimulation() {
+  return request('/sim/pause', { method: 'POST' })
+}
+
+export function resumeSimulation() {
+  return request('/sim/resume', { method: 'POST' })
+}
+
+export function abortSimulation() {
+  return request('/sim/abort', { method: 'POST' })
+}
+
+export function setSimulationSpeed(multiplier) {
+  return request('/sim/speed', {
+    method: 'POST',
+    body: JSON.stringify({ multiplier }),
+  })
+}
+
 export function getOptimization() {
   return request('/optimize')
 }

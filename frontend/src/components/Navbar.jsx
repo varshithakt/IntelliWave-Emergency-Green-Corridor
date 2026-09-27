@@ -1,7 +1,7 @@
 import { Activity, Cpu, RadioTower, ShieldCheck } from 'lucide-react'
 import { motion } from 'framer-motion'
 
-export default function Navbar({ connected, dispatchId, signalPanelOpen, onToggleSignalPanel }) {
+export default function Navbar({ connected, dispatchId }) {
   return (
     <motion.header
       initial={{ opacity: 0, y: -16 }}
@@ -18,14 +18,8 @@ export default function Navbar({ connected, dispatchId, signalPanelOpen, onToggl
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          onClick={onToggleSignalPanel}
-          className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-100 transition hover:bg-cyan-300/20"
-        >
-          {signalPanelOpen ? 'Hide Signal Priority' : 'Open Signal Priority'}
-        </button>
         <div className="hidden items-center gap-3 md:flex">
-          <StatusPill icon={Cpu} label="Neural Optimizer" value="ACTIVE" />
+          <StatusPill icon={Cpu} label="Optimization" value="SIMULATION" />
           <StatusPill icon={RadioTower} label="WebSocket" value={connected ? 'LIVE' : 'OFFLINE'} hot={connected} />
           <StatusPill icon={Activity} label="Dispatch" value={dispatchId || 'STANDBY'} />
         </div>

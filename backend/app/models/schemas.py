@@ -9,9 +9,23 @@ class RoutePoint(BaseModel):
     lng: float
 
 
+class FleetUnit(BaseModel):
+    id: str
+    lat: float
+    lng: float
+    name: str | None = None
+    disease: str | None = None
+    status: str = "Ready"
+
+
 class DispatchRequest(BaseModel):
     start: RoutePoint | None = None
     destination: RoutePoint | None = None
+    ambulance_id: str = "AMB-001"
+    name: str | None = None
+    disease: str = "Cardiac Arrest"
+    priority: int | None = None
+    fleet: list[FleetUnit] = Field(default_factory=list)
 
 
 class SignalState(str, Enum):
@@ -55,6 +69,10 @@ class AmbulanceState(BaseModel):
     eta_seconds: int = 0
     optimized_eta_seconds: int = 0
     normal_eta_seconds: int = 0
+    name: str | None = None
+    disease: str | None = None
+    priority: int = 50
+    status: Literal["Ready", "Standby", "En Route", "Arrived", "Aborted"] = "Ready"
 
 
 class Metrics(BaseModel):
@@ -69,6 +87,22 @@ class Metrics(BaseModel):
     route_confidence: float = 0
 
 
+class IncidentSummary(BaseModel):
+    dispatch_id: str
+    ambulance_id: str
+    name: str | None = None
+    disease: str | None = None
+    priority: int = 0
+    corridor_length_km: float = 0
+    normal_eta_min: float = 0
+    optimized_eta_min: float = 0
+    eta_saved_min: float = 0
+    eta_reduction_pct: float = 0
+    signals_used: int = 0
+    vehicles_cleared: int = 0
+    narrative: str = ""
+
+
 class DispatchResponse(BaseModel):
     dispatch_id: str
     route: list[RoutePoint]
@@ -77,3 +111,6 @@ class DispatchResponse(BaseModel):
     ambulances: list[AmbulanceState]
     metrics: Metrics
     events: list[str]
+    sim_status: str = "running"
+    playback_speed: float = 1
+    incident_summary: IncidentSummary | None = None

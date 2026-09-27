@@ -23,7 +23,7 @@ export function createDefaultAmbulances() {
   return defaultSlots
 }
 
-export default function AmbulanceFleetPanel({ ambulances, setAmbulances, trackedAmbulanceId, onTrackAmbulance }) {
+export default function AmbulanceFleetPanel({ ambulances, setAmbulances, trackedAmbulanceId, onTrackAmbulance, recommendedAmbulance }) {
   const priorityOrder = [...ambulances].sort((a, b) => diseasePriority[b.disease] - diseasePriority[a.disease])
 
   function updateAmbulance(id, field, value) {
@@ -65,6 +65,23 @@ export default function AmbulanceFleetPanel({ ambulances, setAmbulances, tracked
           ))}
         </div>
       </div>
+
+      {recommendedAmbulance ? (
+        <div className="mb-4 rounded-xl border border-emerald-300/25 bg-emerald-400/[0.08] p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-200/70">Dispatch recommendation</p>
+              <p className="mt-1 text-sm font-semibold text-white">{recommendedAmbulance.id} · {recommendedAmbulance.disease}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-400">Highest configured emergency priority among available units (P{diseasePriority[recommendedAmbulance.disease]}). Review and confirm before dispatch.</p>
+            </div>
+            <button type="button" onClick={() => onTrackAmbulance(recommendedAmbulance.id)} className="shrink-0 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-400/20">
+              {trackedAmbulanceId === recommendedAmbulance.id ? 'Selected' : 'Select unit'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mb-4 rounded-xl border border-amber-300/20 bg-amber-400/[0.06] p-3 text-xs text-amber-100/80">No available ambulance to recommend. Set a unit to Ready before dispatch.</div>
+      )}
 
       <div className="space-y-3">
         {ambulances.map((ambulance) => (

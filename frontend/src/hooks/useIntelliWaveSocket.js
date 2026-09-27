@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { WS_URL } from '../services/api'
 
 const initialMetrics = {
@@ -23,6 +23,12 @@ export function useIntelliWaveSocket() {
     metrics: initialMetrics,
     events: ['Awaiting emergency dispatch'],
     heat_points: [],
+    sim_status: 'idle',
+    playback_speed: 1,
+    incident_summary: null,
+    active_ambulance_id: null,
+    green_radius_m: 200,
+    priority: 0,
   })
   const [series, setSeries] = useState([])
   const wsRef = useRef(null)
@@ -36,7 +42,7 @@ export function useIntelliWaveSocket() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        console.log('Received data:', data)
+        if (data.type === 'pong') return
         const normalizedData = { ...data }
         if (data.ambulance && !data.ambulances) {
           normalizedData.ambulances = [{ id: 'AMB-001', ...data.ambulance }]
@@ -49,8 +55,9 @@ export function useIntelliWaveSocket() {
           metrics: normalizedData.metrics || current.metrics,
           route: normalizedData.route?.length ? normalizedData.route : current.route,
           heat_points: normalizedData.heat_points || current.heat_points,
+          incident_summary: normalizedData.incident_summary ?? current.incident_summary,
         }))
-        if (data.metrics) {
+        if (data.metrics && (data.type === 'tick' || data.type === 'dispatch' || data.type === 'complete')) {
           setSeries((current) => {
             const next = [
               ...current,
@@ -71,14 +78,5 @@ export function useIntelliWaveSocket() {
     return () => ws.close()
   }, [])
 
-  const send = useMemo(
-    () => (message) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(message)
-      }
-    },
-    [],
-  )
-
-  return { connected, snapshot, setSnapshot, series, setSeries, send }
+  return { connected, snapshot, setSnapshot, series, setSeries }
 }

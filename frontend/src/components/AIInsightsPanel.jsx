@@ -1,9 +1,11 @@
 import { motion } from 'framer-motion'
 import { BrainCircuit, CheckCircle2, Sparkles } from 'lucide-react'
 
-export default function AIInsightsPanel({ metrics }) {
+export default function AIInsightsPanel({ metrics, snapshot, disease }) {
+  const radius = snapshot?.green_radius_m || 200
+  const priority = snapshot?.priority || 0
   const decisions = [
-    `Priority radius locked at 200m with ${metrics.active_signals || 0} active signals`,
+    `${disease || 'Emergency'} priority ${priority} locked a ${radius}m green radius with ${metrics.active_signals || 0} active signals`,
     `Route confidence ${metrics.route_confidence || 0}% after congestion scan`,
     `ETA compression ${metrics.eta_reduction_pct || 0}% through adaptive green wave`,
   ]

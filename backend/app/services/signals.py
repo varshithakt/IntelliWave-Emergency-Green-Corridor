@@ -5,7 +5,7 @@ from app.services.geo import haversine_m
 
 
 class SignalOptimizationService:
-    def generate_intersections(self, route: list[RoutePoint]) -> list[Intersection]:
+    def generate_intersections(self, route: list[RoutePoint], activation_radius_m: int = 200) -> list[Intersection]:
         if len(route) < 3:
             return []
         indexes = [round((len(route) - 1) * ratio) for ratio in (0.15, 0.28, 0.41, 0.55, 0.69, 0.82, 0.93)]
@@ -33,25 +33,35 @@ class SignalOptimizationService:
                     lat=point.lat,
                     lng=point.lng,
                     sequence_index=sequence,
+                    activation_radius_m=activation_radius_m,
                     confidence=round(0.8 + sequence * 0.024, 2),
                 )
             )
         return intersections
 
-    def update(self, intersections: list[Intersection], ambulance: RoutePoint, route_progress: float) -> tuple[list[Intersection], list[str]]:
+    def update(
+        self,
+        intersections: list[Intersection],
+        ambulance: RoutePoint,
+        route_progress: float,
+        green_radius_m: int = 200,
+        predict_radius_m: int = 650,
+        prediction_lead: float = 0.18,
+    ) -> tuple[list[Intersection], list[str]]:
         events: list[str] = []
         for signal in intersections:
             distance = haversine_m(ambulance, RoutePoint(lat=signal.lat, lng=signal.lng))
             previous = signal.state
             signal.distance_to_ambulance_m = round(distance, 1)
+            radius = signal.activation_radius_m or green_radius_m
             wave_front = signal.sequence_index / max(len(intersections), 1)
-            if distance <= 200:
+            if distance <= radius:
                 signal.state = SignalState.green
                 signal.countdown = max(7, int(24 - distance / 12))
-            elif distance <= 650 or route_progress + 0.18 >= wave_front:
+            elif distance <= predict_radius_m or route_progress + prediction_lead >= wave_front:
                 signal.state = SignalState.predicted
                 signal.countdown = max(4, int(distance / 26))
-            elif previous == SignalState.green and distance > 260:
+            elif previous == SignalState.green and distance > radius * 1.3:
                 signal.state = SignalState.cooling
                 signal.countdown = 5
             else:
