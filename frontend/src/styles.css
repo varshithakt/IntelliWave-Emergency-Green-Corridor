@@ -171,6 +171,21 @@ body {
   border-color: rgba(254, 240, 138, 0.72);
 }
 
+.road-closure-marker {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 2px solid rgba(254, 215, 170, 0.95);
+  border-radius: 999px;
+  background: rgba(194, 65, 12, 0.92);
+  color: white;
+  box-shadow: 0 0 22px rgba(249, 115, 22, 0.78);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 @keyframes glowGreen {
   50% { transform: scale(1.12); filter: brightness(1.35); }
 }

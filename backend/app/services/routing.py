@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import math
 from typing import Any
 
 import httpx
@@ -48,6 +49,29 @@ class RoutingService:
                 "source": "fallback",
                 "steps": [],
             }
+
+    async def get_detour_route(self, start: RoutePoint, destination: RoutePoint, blocked: RoutePoint) -> dict[str, Any]:
+        """Build a road-snapped demo detour through a waypoint beside a simulated closure."""
+        latitude_scale = max(0.2, abs(math.cos(math.radians(blocked.lat))))
+        east_west = (destination.lng - start.lng) * latitude_scale
+        north_south = destination.lat - start.lat
+        length = max((east_west ** 2 + north_south ** 2) ** 0.5, 0.0001)
+        offset_degrees = 0.0035
+        waypoint = RoutePoint(
+            lat=blocked.lat - (east_west / length) * offset_degrees,
+            lng=blocked.lng + (north_south / length) * offset_degrees / latitude_scale,
+        )
+        first_leg = await self.get_route(start, waypoint)
+        second_leg = await self.get_route(waypoint, destination)
+        points = first_leg["points"] + second_leg["points"][1:]
+        return {
+            "points": points,
+            "distance_m": first_leg["distance_m"] + second_leg["distance_m"],
+            "duration_s": first_leg["duration_s"] + second_leg["duration_s"],
+            "source": "simulated_detour",
+            "steps": first_leg.get("steps", []) + second_leg.get("steps", []),
+            "detour_waypoint": waypoint,
+        }
 
     def _fallback_route(self, start: RoutePoint, destination: RoutePoint) -> list[RoutePoint]:
         return [

@@ -30,6 +30,9 @@ class SimulationEngine:
         self.dispatch_id: str | None = None
         self.route: list[RoutePoint] = []
         self.distance_m = 0.0
+        self._travelled_m = 0.0
+        self.destination: RoutePoint | None = None
+        self.road_closure: RoutePoint | None = None
         self.intersections = []
         self.vehicle_agents = []
         self.ambulances: list[AmbulanceState] = []
@@ -50,6 +53,7 @@ class SimulationEngine:
         self._paused = False
         self._abort = False
         self._peak_signals = 0
+        self.road_closure = None
 
     def _active(self) -> AmbulanceState | None:
         if not self.ambulances:
@@ -66,6 +70,7 @@ class SimulationEngine:
         self.playback_speed = 1.0
         self.incident_summary = None
         self._peak_signals = 0
+        self.road_closure = None
         self.priority = resolve_priority(request.disease, request.priority)
         self.disease = request.disease
         params = corridor_params(self.priority, self.base_speed_kmph)
@@ -77,6 +82,8 @@ class SimulationEngine:
         route_data = await self.routing.get_route(request.start, request.destination)
         self.route = route_data["points"]
         self.distance_m = route_data["distance_m"]
+        self._travelled_m = 0.0
+        self.destination = request.destination or self.route[-1]
         self.dispatch_id = f"IW-{uuid.uuid4().hex[:8].upper()}"
         self.intersections = self.signals.generate_intersections(self.route, self.green_radius_m)
         self.vehicle_agents = self.vehicles.seed_vehicles(self.route)
@@ -150,16 +157,16 @@ class SimulationEngine:
 
     async def _run(self) -> None:
         tick = 0
-        travelled = 0.0
         try:
-            while self._running and self.route and travelled < self.distance_m:
+            while self._running and self.route and self._travelled_m < self.distance_m:
                 while self._paused and not self._abort:
                     await asyncio.sleep(0.12)
                 if self._abort:
                     break
                 tick += 1
                 meters_per_tick = (self.corridor_speed_kmph / 3.6) * self.tick_seconds
-                travelled = min(self.distance_m, travelled + meters_per_tick * (1.25 if tick > 5 else 0.72))
+                travelled = min(self.distance_m, self._travelled_m + meters_per_tick * (1.25 if tick > 5 else 0.72))
+                self._travelled_m = travelled
                 point, route_index = point_at_distance(self.route, travelled)
                 progress = travelled / max(self.distance_m, 1)
                 self.intersections, signal_events = self.signals.update(
@@ -309,6 +316,45 @@ class SimulationEngine:
         await self.manager.broadcast(snapshot)
         return snapshot
 
+    async def simulate_road_closure(self) -> dict[str, Any]:
+        active = self._active()
+        if not self._running or not active or not self.destination or len(self.route) < 2:
+            return self.snapshot("road_closure_unavailable", notice="Start a dispatch before simulating a road closure.")
+
+        remaining = max(0, self.distance_m - self._travelled_m)
+        if remaining < 120:
+            return self.snapshot("road_closure_unavailable", notice="The ambulance is too close to arrival to reroute.")
+
+        closure_distance = self._travelled_m + remaining * 0.55
+        blocked, _ = point_at_distance(self.route, closure_distance)
+        origin = RoutePoint(lat=active.lat, lng=active.lng)
+        route_data = await self.routing.get_detour_route(origin, self.destination, blocked)
+        self.route = route_data["points"]
+        self.distance_m = route_data["distance_m"]
+        self._travelled_m = 0.0
+        self.road_closure = blocked
+        self.intersections = self.signals.generate_intersections(self.route, self.green_radius_m)
+        self.vehicle_agents = self.vehicles.seed_vehicles(self.route)
+        active.lat = self.route[0].lat
+        active.lng = self.route[0].lng
+        active.progress = 0.0
+        active.route_index = 0
+        active.status = "En Route"
+        normal, optimized = self.eta.estimate(
+            self.distance_m, self.corridor_speed_kmph, 58, 0, self.priority
+        )
+        traffic_snapshot = self.traffic.score(self.route, self.vehicle_agents, 0)
+        self.metrics = self.traffic.metrics(
+            normal, optimized, self.route, 0, 0, traffic_snapshot.congestion_score
+        )
+        self.events.extend([
+            "SIMULATION: road closure reported ahead on the active corridor",
+            "Ambulance route recalculated from its current position via a detour waypoint",
+        ])
+        snapshot = self.snapshot("road_closure", heat_points=traffic_snapshot.heat_points)
+        await self.manager.broadcast(snapshot)
+        return snapshot
+
     def snapshot(self, event_type: str = "snapshot", **extra: Any) -> dict[str, Any]:
         return {
             "type": event_type,
@@ -326,6 +372,7 @@ class SimulationEngine:
             "active_ambulance_id": self.active_ambulance_id,
             "priority": self.priority,
             "green_radius_m": self.green_radius_m,
+            "road_closure": self.road_closure.model_dump(mode="json") if self.road_closure else None,
             **extra,
         }
 

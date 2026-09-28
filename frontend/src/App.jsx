@@ -9,6 +9,7 @@ import DispatchControl from './components/DispatchControl'
 import LiveActivityFeed from './components/LiveActivityFeed'
 import LiveCityMap from './components/LiveCityMap'
 import Navbar from './components/Navbar'
+import RoadClosurePanel from './components/RoadClosurePanel'
 import SignalControlPanel from './components/SignalControlPanel'
 import TrafficWavePanel from './components/TrafficWavePanel'
 import VehicleReroutingPanel from './components/VehicleReroutingPanel'
@@ -20,6 +21,7 @@ import {
   requestReroute,
   resumeSimulation,
   setSimulationSpeed,
+  simulateRoadClosure,
 } from './services/api'
 
 const destinationLocations = [
@@ -105,6 +107,7 @@ export default function App() {
 
   async function handleDispatch() {
     setLoading(true)
+    setTrackedVehicleId(null)
     setSummaryOpen(true)
     setSeries([])
     try {
@@ -167,10 +170,18 @@ export default function App() {
   }
 
   function handleSelectStart(option) {
-    if (option?.id) setTrackedAmbulanceId(option.id)
+    if (option?.id) handleTrackAmbulance(option.id)
   }
 
-  const activeAmbulance = mapSnapshot.ambulances.find((ambulance) => ambulance.id === trackedAmbulanceId)
+  function handleTrackAmbulance(id) {
+    setTrackedAmbulanceId(id)
+    setTrackedVehicleId(null)
+  }
+
+  const activeAmbulanceId = ['running', 'paused'].includes(snapshot.sim_status)
+    ? snapshot.active_ambulance_id || trackedAmbulanceId
+    : trackedAmbulanceId
+  const activeAmbulance = mapSnapshot.ambulances.find((ambulance) => ambulance.id === activeAmbulanceId)
   const simStatus = snapshot.sim_status || 'idle'
   const active = simStatus === 'running' || simStatus === 'paused'
   const showSummary = summaryOpen && snapshot.incident_summary && (simStatus === 'complete' || snapshot.type === 'complete')
@@ -204,13 +215,6 @@ export default function App() {
         <div className="mb-1"><p className="text-xs font-medium uppercase tracking-[0.18em] text-emerald-300">Operations / Command</p><h2 className="mt-1 text-2xl font-semibold text-white">Emergency dispatch</h2><p className="mt-1 text-sm text-slate-400">Coordinate the ambulance route and monitor the corridor.</p></div>
         <section className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
           <div className="space-y-4">
-            <AmbulanceFleetPanel
-              ambulances={fleetView}
-              setAmbulances={setFleetAmbulances}
-              trackedAmbulanceId={trackedAmbulanceId}
-              onTrackAmbulance={setTrackedAmbulanceId}
-              recommendedAmbulance={recommendedAmbulance}
-            />
             <DispatchControl
               onDispatch={handleDispatch}
               onReroute={handleReroute}
@@ -233,9 +237,16 @@ export default function App() {
               activeDisease={trackedAmbulance.disease}
               priorityScore={diseasePriority[trackedAmbulance.disease]}
             />
+            <AmbulanceFleetPanel
+              ambulances={fleetView}
+              setAmbulances={setFleetAmbulances}
+              trackedAmbulanceId={trackedAmbulanceId}
+              onTrackAmbulance={handleTrackAmbulance}
+              recommendedAmbulance={recommendedAmbulance}
+            />
           </div>
 
-          <div className="min-h-[620px]">
+          <div className="h-[72vh] min-h-[560px] max-h-[880px] self-start">
             <LiveCityMap
               snapshot={mapSnapshot}
               startPoint={startPoint}
@@ -250,21 +261,21 @@ export default function App() {
         </> : null}
 
         {activeView === 'fleet' ? <section className="grid gap-4 xl:grid-cols-2">
-          <div><p className="text-xs font-medium uppercase tracking-[0.18em] text-emerald-300">Operations / Fleet</p><h2 className="mb-4 mt-1 text-2xl font-semibold">Ambulance fleet</h2><AmbulanceFleetPanel ambulances={fleetView} setAmbulances={setFleetAmbulances} trackedAmbulanceId={trackedAmbulanceId} onTrackAmbulance={setTrackedAmbulanceId} recommendedAmbulance={recommendedAmbulance} /></div>
-          <VehicleReroutingPanel vehicles={snapshot.vehicles || []} onTrackVehicle={setTrackedVehicleId} trackedVehicleId={trackedVehicleId} ambulances={mapSnapshot.ambulances} onTrackAmbulance={setTrackedAmbulanceId} trackedAmbulanceId={trackedAmbulanceId} />
+          <div><p className="text-xs font-medium uppercase tracking-[0.18em] text-emerald-300">Operations / Fleet</p><h2 className="mb-4 mt-1 text-2xl font-semibold">Ambulance fleet</h2><AmbulanceFleetPanel ambulances={fleetView} setAmbulances={setFleetAmbulances} trackedAmbulanceId={trackedAmbulanceId} onTrackAmbulance={handleTrackAmbulance} recommendedAmbulance={recommendedAmbulance} /></div>
+          <VehicleReroutingPanel vehicles={snapshot.vehicles || []} onTrackVehicle={setTrackedVehicleId} trackedVehicleId={trackedVehicleId} ambulances={mapSnapshot.ambulances} onTrackAmbulance={handleTrackAmbulance} trackedAmbulanceId={trackedAmbulanceId} />
         </section> : null}
 
-        {activeView === 'signals' ? <section className="grid gap-4 xl:grid-cols-2"><div><p className="text-xs font-medium uppercase tracking-[0.18em] text-emerald-300">Operations / Network</p><h2 className="mb-4 mt-1 text-2xl font-semibold">Signals & traffic</h2><SignalControlPanel intersections={snapshot.intersections || []} priorityEnabled /></div><TrafficWavePanel series={series} active={active} /></section> : null}
+        {activeView === 'signals' ? <section className="grid gap-4 xl:grid-cols-2"><div className="space-y-4"><div><p className="text-xs font-medium uppercase tracking-[0.18em] text-emerald-300">Operations / Network</p><h2 className="mb-4 mt-1 text-2xl font-semibold">Signals & traffic</h2></div><RoadClosurePanel active={active} onSimulate={simulateRoadClosure} closure={snapshot.road_closure} /><SignalControlPanel intersections={snapshot.intersections || []} priorityEnabled /></div><TrafficWavePanel series={series} active={active} /></section> : null}
 
         {activeView === 'insights' ? <section className="grid gap-4 xl:grid-cols-[360px_1fr_390px]">
           <AnalyticsSidebar metrics={snapshot.metrics} series={series} dispatchEstimate={dispatchEstimate} />
           <div className="space-y-4">
             <TrafficWavePanel series={series} active={active} />
             <SignalControlPanel intersections={snapshot.intersections || []} priorityEnabled />
-            <VehicleReroutingPanel vehicles={snapshot.vehicles || []} onTrackVehicle={setTrackedVehicleId} trackedVehicleId={trackedVehicleId} ambulances={mapSnapshot.ambulances} onTrackAmbulance={setTrackedAmbulanceId} trackedAmbulanceId={trackedAmbulanceId} />
+            <VehicleReroutingPanel vehicles={snapshot.vehicles || []} onTrackVehicle={setTrackedVehicleId} trackedVehicleId={trackedVehicleId} ambulances={mapSnapshot.ambulances} onTrackAmbulance={handleTrackAmbulance} trackedAmbulanceId={trackedAmbulanceId} />
           </div>
           <div className="space-y-4">
-            <AIInsightsPanel metrics={snapshot.metrics} snapshot={snapshot} disease={trackedAmbulance.disease} />
+            <AIInsightsPanel metrics={snapshot.metrics} snapshot={snapshot} disease={activeAmbulance?.disease || trackedAmbulance.disease} />
             <AmbulanceStatusPanel
               ambulance={activeAmbulance}
               intersections={snapshot.intersections || []}

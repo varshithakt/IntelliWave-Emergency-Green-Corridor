@@ -43,6 +43,10 @@ export function setSimulationSpeed(multiplier) {
   })
 }
 
+export function simulateRoadClosure() {
+  return request('/sim/road-closure', { method: 'POST' })
+}
+
 export function getOptimization() {
   return request('/optimize')
 }

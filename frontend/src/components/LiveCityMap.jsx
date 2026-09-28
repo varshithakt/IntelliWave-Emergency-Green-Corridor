@@ -1,5 +1,5 @@
 import { Circle, MapContainer, Marker, Polyline, TileLayer, useMap, useMapEvents } from 'react-leaflet'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo } from 'react'
 import { divIcon, bengaluruCenter, routeBounds, statusColor, toLatLng } from '../utils/map'
 
 function MapClickCapture({ clickMode, onMapClick }) {
@@ -14,37 +14,62 @@ function MapClickCapture({ clickMode, onMapClick }) {
 
 function FitRoute({ route }) {
   const map = useMap()
+  const routeKey = useMemo(
+    () => route?.map((point) => `${Number(point.lat).toFixed(5)},${Number(point.lng).toFixed(5)}`).join('|') || '',
+    [route],
+  )
   useEffect(() => {
     if (route?.length > 2) map.fitBounds(routeBounds(route), { animate: true, duration: 1 })
-  }, [map, route])
+  }, [map, routeKey])
   return null
 }
 
-function TrackTarget({ ambulances, vehicles, trackedAmbulanceId, trackedVehicleId }) {
+function TrackTarget({ ambulances, vehicles, activeAmbulanceId, trackedAmbulanceId, trackedVehicleId, shouldFollow }) {
   const map = useMap()
-  const previousTargetId = useRef(null)
-  const trackedAmbulance = ambulances?.find((ambulance) => ambulance.id === trackedAmbulanceId)
   const trackedVehicle = vehicles?.find((vehicle) => vehicle.id === trackedVehicleId)
-  const target = trackedAmbulance || trackedVehicle
+  const activeAmbulance = ambulances?.find((ambulance) => ambulance.id === activeAmbulanceId)
+  const selectedAmbulance = ambulances?.find((ambulance) => ambulance.id === trackedAmbulanceId)
+  const target = trackedVehicle || activeAmbulance || selectedAmbulance
 
   useEffect(() => {
-    if (!target) return
+    if (!target || !Number.isFinite(Number(target.lat)) || !Number.isFinite(Number(target.lng))) return
     const position = [target.lat, target.lng]
-
-    if (previousTargetId.current !== target.id) {
-      previousTargetId.current = target.id
-      map.flyTo(position, 15, { animate: true, duration: 0.75 })
-      return
-    }
-
-    map.panTo(position, { animate: true, duration: 0.35 })
-  }, [map, target?.id, target?.lat, target?.lng])
+    map.stop()
+    map.setView(position, Math.min(map.getZoom(), 12), { animate: false })
+    if (!shouldFollow) return
+    const followTimer = window.setInterval(() => {
+      map.panTo([target.lat, target.lng], { animate: false })
+    }, 1200)
+    return () => window.clearInterval(followTimer)
+  }, [map, target?.id, target?.lat, target?.lng, shouldFollow])
 
   return null
 }
 
-function HolographicLayer({ route, ambulances, intersections, vehicles, heatPoints, startPoint, destinationPoint, trackedVehicleId, trackedAmbulanceId }) {
-  const trackedAmbulance = ambulances?.find(a => a.id === trackedAmbulanceId) || ambulances?.[0]
+function LocateAmbulanceControl({ ambulances, activeAmbulanceId, trackedAmbulanceId }) {
+  const map = useMap()
+  const target = ambulances?.find((ambulance) => ambulance.id === activeAmbulanceId)
+    || ambulances?.find((ambulance) => ambulance.id === trackedAmbulanceId)
+  if (!target) return null
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation()
+        map.stop()
+        map.setView([Number(target.lat), Number(target.lng)], Math.min(map.getZoom(), 12), { animate: false })
+      }}
+      className="absolute right-4 top-4 z-[700] rounded-xl border border-cyan-200/30 bg-slate-950/90 px-4 py-2.5 text-sm font-semibold text-cyan-50 shadow-lg backdrop-blur hover:bg-cyan-950"
+    >
+      ◎ Center on {target.id}
+    </button>
+  )
+}
+
+function HolographicLayer({ route, ambulances, intersections, vehicles, heatPoints, roadClosure, startPoint, destinationPoint, trackedVehicleId, trackedAmbulanceId, routeAmbulanceId }) {
+  const trackedAmbulance = ambulances?.find(a => a.id === routeAmbulanceId)
+    || ambulances?.find(a => a.id === trackedAmbulanceId)
+    || ambulances?.[0]
   const completedRoute = useMemo(() => {
     if (!route?.length || !trackedAmbulance) return []
     const index = Math.max(0, trackedAmbulance.route_index || 0)
@@ -64,6 +89,10 @@ function HolographicLayer({ route, ambulances, intersections, vehicles, heatPoin
           pathOptions={{ color: '#22d3ee', fillColor: '#22d3ee', fillOpacity: 0.05, opacity: 0.18, weight: 1 }}
         />
       ))}
+      {roadClosure ? <>
+        <Circle center={[roadClosure.lat, roadClosure.lng]} radius={150} pathOptions={{ color: '#f97316', fillColor: '#f97316', fillOpacity: 0.14, weight: 2, dashArray: '5 7' }} />
+        <Marker position={[roadClosure.lat, roadClosure.lng]} icon={divIcon('road-closure', '<div class="road-closure-marker"><span>×</span></div>', [34, 34])} />
+      </> : null}
       {previewRoute.length > 1 && (
         <Polyline positions={previewRoute.map(toLatLng)} pathOptions={{ color: '#f59e0b', weight: 4, opacity: 0.9, dashArray: '8 10' }} />
       )}
@@ -115,7 +144,7 @@ function HolographicLayer({ route, ambulances, intersections, vehicles, heatPoin
           />
         </>
       )}
-      {startPoint && (
+      {startPoint && !route?.length && (
         <Marker
           position={[startPoint.lat, startPoint.lng]}
           icon={divIcon('location-start', '<div class="location-pin start">S</div>', [30, 30])}
@@ -171,7 +200,10 @@ function SignalMarker({ signal }) {
 }
 
 export default function LiveCityMap({ snapshot, startPoint, destinationPoint, trackedVehicleId, trackedAmbulanceId, clickMode, onMapClick }) {
-  const { route, ambulances, intersections, vehicles, heat_points: heatPoints } = snapshot
+  const { route, ambulances, intersections, vehicles, heat_points: heatPoints, road_closure: roadClosure } = snapshot
+  const routeAmbulanceId = snapshot.active_ambulance_id
+  const dispatchInProgress = ['running', 'paused'].includes(snapshot.sim_status)
+  const mapTrackedAmbulanceId = dispatchInProgress && routeAmbulanceId ? routeAmbulanceId : trackedAmbulanceId
   const clickHint = clickMode === 'pickup' ? 'Click map to set pickup' : clickMode === 'destination' ? 'Click map to set hospital' : 'Live Map Workspace'
   return (
     <div className={`relative h-full min-h-[520px] overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950 shadow-neon ${clickMode ? 'cursor-crosshair' : ''}`}>
@@ -185,8 +217,15 @@ export default function LiveCityMap({ snapshot, startPoint, destinationPoint, tr
         <TrackTarget
           ambulances={ambulances}
           vehicles={vehicles}
-          trackedAmbulanceId={trackedAmbulanceId}
+          activeAmbulanceId={mapTrackedAmbulanceId}
+          trackedAmbulanceId={mapTrackedAmbulanceId}
           trackedVehicleId={trackedVehicleId}
+          shouldFollow={dispatchInProgress && !clickMode}
+        />
+        <LocateAmbulanceControl
+          ambulances={ambulances}
+          activeAmbulanceId={dispatchInProgress ? routeAmbulanceId : null}
+          trackedAmbulanceId={trackedAmbulanceId}
         />
         <HolographicLayer
           route={route}
@@ -194,10 +233,12 @@ export default function LiveCityMap({ snapshot, startPoint, destinationPoint, tr
           intersections={intersections}
           vehicles={vehicles}
           heatPoints={heatPoints}
+          roadClosure={roadClosure}
           startPoint={startPoint}
           destinationPoint={destinationPoint}
           trackedVehicleId={trackedVehicleId}
-          trackedAmbulanceId={trackedAmbulanceId}
+          trackedAmbulanceId={mapTrackedAmbulanceId}
+          routeAmbulanceId={routeAmbulanceId}
         />
       </MapContainer>
       <div className="pointer-events-none absolute inset-0 map-panel-vignette" />

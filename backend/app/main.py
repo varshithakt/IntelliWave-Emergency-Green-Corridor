@@ -57,6 +57,12 @@ async def reroute() -> dict:
     return {"status": "accepted", "message": "Vehicle rerouting directive broadcast", "snapshot": snapshot}
 
 
+@app.post("/sim/road-closure")
+async def sim_road_closure() -> dict:
+    snapshot = await engine.simulate_road_closure()
+    return {"status": snapshot["type"], "snapshot": snapshot}
+
+
 @app.post("/sim/pause")
 async def sim_pause() -> dict:
     snapshot = await engine.pause()
